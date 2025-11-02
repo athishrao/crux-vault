@@ -1,8 +1,9 @@
+import os
 import keyring
 
-from unified.crypto.encryption import Encryptor
+from cruxvault.crypto.encryption import Encryptor
 
-KEYRING_SERVICE = "unified-cli"
+KEYRING_SERVICE = "cruxvault-cli"
 KEYRING_USERNAME = "master-key"
 
 def get_or_create_master_key() -> bytes:

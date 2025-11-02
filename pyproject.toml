@@ -1,0 +1,52 @@
+[tool.poetry]
+name = "crux"
+version = "0.1.0"
+description = "Unified secrets, configs, and feature flags management CLI"
+authors = ["Athish <athishrao@outlook.com>"]
+readme = "README.md"
+packages = [{include = "cruxvault"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+typer = {extras = ["all"], version = ">=0.12.0"}
+rich = "^13.7.0"
+cryptography = "^42.0.0"
+pydantic = "^2.5.0"
+sqlalchemy = "^2.0.0"
+keyring = "^24.3.0"
+pyyaml = "^6.0.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+black = "^23.12.0"
+mypy = "^1.7.0"
+ruff = "^0.1.7"
+
+[tool.poetry.scripts]
+crux = "cruxvault.__main__:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+

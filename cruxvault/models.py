@@ -38,7 +38,7 @@ class SecretVersion(BaseModel):
 
 class StorageConfig(BaseModel):
     backend: str = Field(default="sqlite", description="Storage backend")
-    path: str = Field(default=".unified/store.db", description="Path to storage file")
+    path: str = Field(default=".cruxvault/store.db", description="Path to storage file")
     encryption_enabled: bool = Field(default=True, description="Whether encryption is enabled")
 
 

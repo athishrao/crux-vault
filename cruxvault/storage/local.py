@@ -7,10 +7,10 @@ from typing import Optional
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from unified.crypto.encryption import Encryptor
-from unified.models import Secret, SecretType, SecretVersion
-from unified.storage.base import StorageBackend
-from unified.storage.models import Base, SecretModel, SecretVersionModel
+from cruxvault.crypto.encryption import Encryptor
+from cruxvault.models import Secret, SecretType, SecretVersion
+from cruxvault.storage.base import StorageBackend
+from cruxvault.storage.models import Base, SecretModel, SecretVersionModel
 
 
 class SQLiteStorage(StorageBackend):

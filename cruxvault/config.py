@@ -3,12 +3,12 @@ import yaml
 from pathlib import Path
 from typing import Optional
 
-from unified.models import AppConfig
+from cruxvault.models import AppConfig
 
 
 class ConfigManager:
 
-    DEFAULT_CONFIG_DIR = ".unified"
+    DEFAULT_CONFIG_DIR = ".cruxvault"
     DEFAULT_CONFIG_FILE = "config.yaml"
 
     def __init__(self, config_dir: str = DEFAULT_CONFIG_DIR) -> None:

@@ -6,11 +6,11 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-from unified.models import SecretType
-from unified.config import ConfigManager
-from unified.crypto.encryption import Encryptor
-from unified.crypto.utils import get_or_create_master_key
-from unified.storage.local import SQLiteStorage
+from cruxvault.models import SecretType
+from cruxvault.config import ConfigManager
+from cruxvault.crypto.encryption import Encryptor
+from cruxvault.crypto.utils import get_or_create_master_key
+from cruxvault.storage.local import SQLiteStorage
 
 app = typer.Typer(
     help="Unified secrets, configs, and feature flags management",
@@ -110,7 +110,7 @@ def init() -> None:
         storage = get_storage()
         storage.initialize()
 
-        print_success(f"Initialized unified in {config_manager.config_dir}")
+        print_success(f"Initialized cruxvault in {config_manager.config_dir}")
         print_info(f"Storage: {config_manager.get_storage_path()}")
 
     except Exception as e:

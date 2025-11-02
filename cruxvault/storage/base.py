@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from unified.models import Secret, SecretVersion
+from cruxvault.models import Secret, SecretVersion
 
 
 class StorageBackend(ABC):
