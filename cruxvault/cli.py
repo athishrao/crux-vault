@@ -2,15 +2,21 @@ import os
 import sys
 import typer
 from typing import Optional, Any
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 
 from cruxvault.models import SecretType
 from cruxvault.config import ConfigManager
 from cruxvault.crypto.encryption import Encryptor
 from cruxvault.crypto.utils import get_or_create_master_key
 from cruxvault.storage.local import SQLiteStorage
+from cruxvault.utils.console import (
+    console,
+    create_history_table,
+    create_secrets_table,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+)
 
 app = typer.Typer(
     help="Unified secrets, configs, and feature flags management",
@@ -18,71 +24,6 @@ app = typer.Typer(
 )
 dev_app = typer.Typer(help="Development mode commands")
 app.add_typer(dev_app, name="dev")
-
-console = Console()
-
-def print_success(message: str) -> None:
-    console.print(f"[green]✓[/green] {message}")
-
-
-def print_error(message: str) -> None:
-    console.print(f"[red]✗[/red] {message}", style="red")
-
-
-def print_error(message: str) -> None:
-    console.print(f"[red]✗[/red] {message}", style="red")
-
-
-def print_warning(message: str) -> None:
-    console.print(f"[yellow]![/yellow] {message}", style="yellow")
-
-
-def print_info(message: str) -> None:
-    console.print(f"[blue]ℹ[/blue] {message}")
-
-
-def create_secrets_table(
-    secrets: list[Any], show_values: bool = False, show_versions: bool = False
-) -> Table:
-    table = Table(show_header=True, header_style="bold magenta")
-
-    table.add_column("Path", style="cyan", no_wrap=False)
-    table.add_column("Type", style="blue")
-
-    if show_versions:
-        table.add_column("Version", justify="right", style="yellow")
-
-    if show_values:
-        table.add_column("Value", style="green")
-    else:
-        table.add_column("Value", style="dim")
-
-    table.add_column("Tags", style="magenta")
-    table.add_column("Updated", style="dim")
-
-    for secret in secrets:
-        row = [
-            secret.path,
-            secret.type.value,
-        ]
-
-        if show_versions:
-            row.append(str(secret.version))
-
-        if show_values:
-            row.append(secret.value)
-        else:
-            row.append("•" * 8)  # Hidden value
-
-        row.extend([
-            ", ".join(secret.tags) if secret.tags else "",
-            secret.updated_at.strftime("%Y-%m-%d %H:%M"),
-        ])
-
-        table.add_row(*row)
-
-    return table
-
 
 def get_storage() -> SQLiteStorage:
     config_manager = ConfigManager()
