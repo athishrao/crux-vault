@@ -3,6 +3,7 @@ import sys
 import typer
 from typing import Optional, Any
 
+from cruxvault.audit.logger import AuditLogger
 from cruxvault.models import SecretType
 from cruxvault.config import ConfigManager
 from cruxvault.crypto.encryption import Encryptor
@@ -25,7 +26,7 @@ app = typer.Typer(
 dev_app = typer.Typer(help="Development mode commands")
 app.add_typer(dev_app, name="dev")
 
-def get_storage() -> SQLiteStorage:
+def get_storage_and_audit() -> tuple[SQLiteStorage, AuditLogger]:
     config_manager = ConfigManager()
     config = config_manager.load_config()
 
@@ -35,7 +36,14 @@ def get_storage() -> SQLiteStorage:
     storage_path = config_manager.get_storage_path()
     storage = SQLiteStorage(storage_path, encryptor)
 
-    return storage
+    audit_path = config_manager.get_audit_path()
+    audit_logger = AuditLogger(
+        audit_path,
+        enabled=config.audit.enabled,
+        log_reads=config.audit.log_reads,
+    )
+
+    return storage, audit_logger
 
 @app.command()
 def init() -> None:
@@ -48,8 +56,10 @@ def init() -> None:
     try:
         config_manager.initialize()
 
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
         storage.initialize()
+
+        audit_logger.log("init", ".", success=True)
 
         print_success(f"Initialized cruxvault in {config_manager.config_dir}")
         print_info(f"Storage: {config_manager.get_storage_path()}")
@@ -68,7 +78,7 @@ def set(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         try:
             SecretType(secret_type)
@@ -78,6 +88,8 @@ def set(
 
         secret = storage.set_secret(path, value, secret_type, tag or [])
 
+        audit_logger.log("set", path, success=True, metadata={"tags": tag or []})
+
         if json_output:
             output = secret.model_dump()
             output["value"] = "•" * 8  # Hide value in JSON output
@@ -86,6 +98,7 @@ def set(
             print_success(f"Set {path} (version {secret.version})")
 
     except Exception as e:
+        audit_logger.log("set", path, success=False, error=str(e))
         print_error(f"Failed to set secret: {e}")
         sys.exit(1)
 
@@ -97,9 +110,11 @@ def get(
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Only output the value"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         secret = storage.get_secret(path)
+
+        audit_logger.log("get", path, success=True)
 
         if not secret:
             print_error(f"Secret not found: {path}")
@@ -113,6 +128,7 @@ def get(
             console.print(secret.value)
 
     except Exception as e:
+        audit_logger.log("get", path, success=False, error=str(e))
         print_error(f"Failed to get secret: {e}")
         sys.exit(1)
 
@@ -124,9 +140,11 @@ def list(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         secrets = storage.list_secrets(path)
+
+        audit_logger.log("list", path or ".", success=True)
 
         if not secrets:
             print_info("No secrets found")
@@ -144,6 +162,7 @@ def list(
             console.print(f"\n[dim]Total: {len(secrets)} secret(s)[/dim]")
 
     except Exception as e:
+        audit_logger.log("list", path or ".", success=False, error=str(e))
         print_error(f"Failed to list secrets: {e}")
         sys.exit(1)
 
@@ -154,7 +173,7 @@ def delete(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         secret = storage.get_secret(path)
         if not secret:
@@ -169,9 +188,12 @@ def delete(
 
         storage.delete_secret(path)
 
+        audit_logger.log("delete", path, success=True)
+
         print_success(f"Deleted {path}")
 
     except Exception as e:
+        audit_logger.log("delete", path, success=False, error=str(e))
         print_error(f"Failed to delete secret: {e}")
         sys.exit(1)
 
@@ -182,9 +204,11 @@ def history(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         versions = storage.get_history(path)
+
+        audit_logger.log("history", path, success=True)
 
         if not versions:
             print_error(f"No history found for: {path}")
@@ -198,6 +222,7 @@ def history(
             console.print(table)
 
     except Exception as e:
+        audit_logger.log("history", path, success=False, error=str(e))
         print_error(f"Failed to get history: {e}")
         sys.exit(1)
 
@@ -209,7 +234,7 @@ def rollback(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         # Confirm rollback
         if not force:
@@ -221,12 +246,18 @@ def rollback(
         # Rollback
         secret = storage.rollback(path, version)
 
+        audit_logger.log(
+            "rollback", path, success=True, metadata={"rollback_version": version}
+        )
+
         print_success(f"Rolled back {path} to version {version} (now version {secret.version})")
 
     except ValueError as e:
+        audit_logger.log("rollback", path, success=False, error=str(e))
         print_error(str(e))
         sys.exit(1)
     except Exception as e:
+        audit_logger.log("rollback", path, success=False, error=str(e))
         print_error(f"Failed to rollback: {e}")
         sys.exit(1)
 
@@ -236,7 +267,7 @@ def dev_start(
     count: int = typer.Option(10, "--count", "-n", help="Number of fake secrets to generate"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         fake_secrets = [
             ("database/host", "localhost"),
@@ -260,6 +291,8 @@ def dev_start(
                 continue
 
 
+        audit_logger.log("dev:start", ".", success=True, metadata={"count": created})
+
         print_success(f"Generated {created} fake secrets for development")
         print_info("Use 'crux list' to see all secrets")
 
@@ -273,7 +306,7 @@ def dev_export(
     output_file: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
 ) -> None:
     try:
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         secrets_list = storage.list_secrets()
 
@@ -296,6 +329,12 @@ def dev_export(
         else:
             console.print(env_content)
 
+        audit_logger.log(
+            "dev:export",
+            output_file or "stdout",
+            success=True,
+            metadata={"count": len(secrets_list)},
+        )
 
     except Exception as e:
         print_error(f"Failed to export secrets: {e}")
@@ -312,7 +351,7 @@ def import_env(
             print_error(f"File not found: {file_path}")
             sys.exit(1)
 
-        storage = get_storage()
+        storage, audit_logger = get_storage_and_audit()
 
         imported = 0
         with open(file_path, "r") as f:
@@ -340,6 +379,10 @@ def import_env(
                 except Exception:
                     continue
 
+        audit_logger.log(
+            "import:env", file_path, success=True, metadata={"count": imported, "prefix": prefix}
+        )
+    
         print_success(f"Imported {imported} secrets from {file_path}")
 
     except Exception as e:

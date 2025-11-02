@@ -8,9 +8,9 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from cruxvault.crypto.encryption import Encryptor
-from cruxvault.models import Secret, SecretType, SecretVersion
+from cruxvault.models import Secret, SecretType, SecretVersion, AuditEntry
 from cruxvault.storage.base import StorageBackend
-from cruxvault.storage.models import Base, SecretModel, SecretVersionModel
+from cruxvault.storage.models import Base, SecretModel, SecretVersionModel, AuditLogModel
 
 
 class SQLiteStorage(StorageBackend):
@@ -234,6 +234,22 @@ class SQLiteStorage(StorageBackend):
                 updated_at=current.updated_at,
                 tags=json.loads(current.tags) if current.tags else [],
             )
+
+
+    def log_audit(self, entry: AuditEntry) -> None:
+        with self.SessionLocal() as session:
+            audit = AuditLogModel(
+                timestamp=entry.timestamp,
+                user=entry.user,
+                action=entry.action,
+                path=entry.path,
+                success=entry.success,
+                error=entry.error,
+                meta_data=json.dumps(entry.metadata),
+            )
+            session.add(audit)
+            session.commit()
+
 
     def close(self) -> None:
         self.engine.dispose()

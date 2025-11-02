@@ -68,3 +68,12 @@ class ConfigManager:
             storage_path = os.path.join(self.find_crux_root(), self.config_dir, os.path.basename(storage_path))
 
         return storage_path
+
+    def get_audit_path(self) -> str:
+        config = self.load_config()
+        audit_path = config.audit.path
+
+        if not os.path.isabs(audit_path):
+            audit_path = os.path.join(self.find_crux_root(), self.config_dir, os.path.basename(audit_path))
+
+        return audit_path
