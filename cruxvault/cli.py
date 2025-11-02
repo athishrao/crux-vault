@@ -41,7 +41,7 @@ def get_storage() -> SQLiteStorage:
 def init() -> None:
     config_manager = ConfigManager()
 
-    if os.path.exists(config_manager.config_path):
+    if config_manager.config_path is not None and os.path.exists(config_manager.config_path):
         print_warning(f"Already initialized in {config_manager.config_dir}")
         return
 
