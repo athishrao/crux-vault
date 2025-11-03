@@ -145,6 +145,11 @@ class SQLiteStorage(StorageBackend):
             if not secret:
                 return False
 
+            version_stmt = select(SecretVersionModel).where(SecretVersionModel.path == path)
+            versions = session.execute(version_stmt).scalars().all()
+            for version in versions:
+                session.delete(version)
+
             session.delete(secret)
             session.commit()
             return True
