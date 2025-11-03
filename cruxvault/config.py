@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 from cruxvault.models import AppConfig
+from cruxvault.utils.console import print_error
 
 
 class ConfigManager:
@@ -44,6 +45,10 @@ class ConfigManager:
         return root / self.config_dir / self.DEFAULT_CONFIG_FILE
 
     def load_config(self) -> AppConfig:
+        if self.config_path is None:
+            raise SystemExit(print_error(f"Not in a CruxVault project (no {self.config_dir} found). "
+            "Please run `crux init` before any other command!"))
+
         if not os.path.exists(self.config_path):
             return AppConfig()
 

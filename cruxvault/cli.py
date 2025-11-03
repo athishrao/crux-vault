@@ -18,7 +18,7 @@ from cruxvault.utils.console import (
     print_success,
     print_warning,
 )
-from cruxvault.utils.utils import get_storage_and_audit
+from cruxvault.utils.utils import get_storage_and_audit, get_audit_logger
 
 app = typer.Typer(
     help="Unified secrets, configs, and feature flags management",
@@ -47,6 +47,8 @@ def init() -> None:
         print_info(f"Storage: {config_manager.get_storage_path()}")
 
     except Exception as e:
+        audit_logger = get_audit_logger()
+        audit_logger.log("init", ".", success=False)
         print_error(f"Initialization failed: {e}")
         sys.exit(1)
 
@@ -80,6 +82,7 @@ def set(
             print_success(f"Set {path} (version {secret.version})")
 
     except Exception as e:
+        audit_logger = get_audit_logger()
         audit_logger.log("set", path, success=False, error=str(e))
         print_error(f"Failed to set secret: {e}")
         sys.exit(1)
@@ -110,6 +113,7 @@ def get(
             console.print(secret.value)
 
     except Exception as e:
+        audit_logger = get_audit_logger()
         audit_logger.log("get", path, success=False, error=str(e))
         print_error(f"Failed to get secret: {e}")
         sys.exit(1)
@@ -144,6 +148,7 @@ def list(
             console.print(f"\n[dim]Total: {len(secrets)} secret(s)[/dim]")
 
     except Exception as e:
+        audit_logger = get_audit_logger()
         audit_logger.log("list", path or ".", success=False, error=str(e))
         print_error(f"Failed to list secrets: {e}")
         sys.exit(1)
@@ -175,6 +180,7 @@ def delete(
         print_success(f"Deleted {path}")
 
     except Exception as e:
+        audit_logger = get_audit_logger()
         audit_logger.log("delete", path, success=False, error=str(e))
         print_error(f"Failed to delete secret: {e}")
         sys.exit(1)
@@ -204,6 +210,7 @@ def history(
             console.print(table)
 
     except Exception as e:
+        audit_logger = get_audit_logger()
         audit_logger.log("history", path, success=False, error=str(e))
         print_error(f"Failed to get history: {e}")
         sys.exit(1)
@@ -239,6 +246,7 @@ def rollback(
         print_error(str(e))
         sys.exit(1)
     except Exception as e:
+        audit_logger = get_audit_logger()
         audit_logger.log("rollback", path, success=False, error=str(e))
         print_error(f"Failed to rollback: {e}")
         sys.exit(1)
