@@ -1,7 +1,8 @@
-# CruxVault CLI
+# CruxVault
 
-CruxVault is a developer-first command-line tool for managing secrets, configs, and feature flags, basically everything you don’t want leaking to the internet. Built with Python, it encrypts your data with AES-256-GCM (because “just trust me” is not a security strategy), keeps version history so you can undo your mistakes!
-Whether you’re wrangling local dev secrets or juggling production chaos, CruxVault CLI keeps your sensitive data safe, consistent, and slightly less terrifying!
+CruxVault is a developer-first tool for managing secrets, configs, and feature flags, basically everything you don’t want leaking to the internet. Built with Python, it encrypts your data with AES-256-GCM (because “just trust me” is not a security strategy), keeps version history so you can undo your mistakes!
+Whether you’re wrangling local dev secrets or juggling production chaos, CruxVault keeps your sensitive data safe, consistent, and slightly less terrifying!
+Available in 2 flavors - `CruxVault CLI` and `CruxVault Python API`
 
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -25,22 +26,32 @@ Whether you’re wrangling local dev secrets or juggling production chaos, CruxV
 ```bash
 git clone https://github.com/athishrao/crux-vault.git
 cd crux-vault
-pip install -e .
 ```
 
-Alternatively, add this to your requirements.txt
+#### Using Editable Pip
 ```bash
-crux @ git+https://github.com/athishrao/crux-vault.git
-```
+pip install -e .
+````
 
-### Using Poetry
-
+#### Using Poetry
 ```bash
 poetry install
 poetry shell
 ```
 
-## Commands
+### Pip Install from Git
+
+```bash
+pip install git+https://github.com/athishrao/crux-vault.git
+```
+
+Alternatively, add this to your requirements.txt
+
+```bash
+crux @ git+https://github.com/athishrao/crux-vault.git
+```
+
+## CLI Commands
 
 ### Core Commands
 
@@ -183,6 +194,119 @@ crux import-env .env.production
 crux import-env .env.staging --prefix staging
 ```
 
+## Python API
+
+Use CruxVault programmatically in your Python applications.
+
+### Installation
+
+```bash
+pip install git+https://github.com/athishrao/crux-vault.git
+```
+
+### Quick Start
+
+```python
+import cruxvault as crux
+
+# Initialize (first time only)
+crux.init()
+
+# Set secrets
+crux.set("database/password", "secret123")
+crux.set("stripe/key", "sk_live_...", tags=["production", "payment"])
+
+# Get secrets
+password = crux.get("database/password")
+print(password)  # "secret123"
+
+# List secrets (returns JSON)
+secrets = crux.list()
+for secret in secrets:
+    print(f"{secret['path']}: v{secret['version']}")
+
+# Pretty print
+crux.list(pretty=True)  # Rich table output
+
+# Delete secrets
+crux.delete("temp/key")
+```
+
+### Class-Based API
+
+```python
+from cruxvault import CruxVault
+
+# Initialize client
+client = CruxVault()
+
+# All operations
+client.set("api/key", "value", tags=["dev"])
+value = client.get("api/key")
+secrets = client.list(prefix="api/")
+client.delete("api/key")
+
+# Version control
+history = client.history("api/key")
+client.rollback("api/key", version=1)
+```
+
+### Integration Examples
+
+**Django settings.py:**
+
+```python
+import cruxvault as crux
+
+SECRET_KEY = crux.get("django/secret_key")
+DATABASE_PASSWORD = crux.get("database/password")
+STRIPE_KEY = crux.get("stripe/secret_key")
+```
+
+**Flask app:**
+
+```python
+from flask import Flask
+import cruxvault as crux
+
+app = Flask(__name__)
+app.config['DATABASE_URI'] = f"postgresql://user:{crux.get('db/password')}@localhost/db"
+```
+
+**Environment variables:**
+
+```python
+import os
+import cruxvault as crux
+
+# Load all secrets into environment
+for secret in crux.list():
+    env_var = secret['path'].upper().replace('/', '_')
+    os.environ[env_var] = crux.get(secret['path'])
+```
+
+### Error Handling
+
+```python
+try:
+    value = crux.get("nonexistent/key")
+except FileNotFoundError:
+    print("Secret not found")
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+### API Reference
+
+| Method                            | Description           | Returns                |
+| --------------------------------- | --------------------- | ---------------------- |
+| `get(path)`                       | Retrieve secret value | `str`                  |
+| `set(path, value, tags=[])`       | Store/update secret   | `None`                 |
+| `delete(path)`                    | Delete secret         | `bool`                 |
+| `list(prefix=None, pretty=False)` | List secrets          | `list[dict]` or `None` |
+| `history(path)`                   | Get version history   | `list[dict]`           |
+| `rollback(path, version)`         | Restore old version   | `None`                 |
+
 ## Security
 
 ### Encryption
@@ -222,6 +346,21 @@ pytest
 # Run specific test file
 pytest tests/test_crypto.py
 ```
+
+## Planned Features
+
+### Team Collaboration
+
+Crux secrets live in your git repo, encrypted. Your team
+uses git for syncing, just like code.
+Wrong merges in case of conflicts should not be an issue, history intact - easily revertable.
+
+1. One person: `crux init --shared && crux keygen > team.key`
+2. Share team.key securely (1Password, etc.)
+3. Everyone: `crux import-key team.key`
+4. Use git normally: commit, push, pull
+
+That's it. No servers, no accounts, no new workflows.
 
 ## Contributing
 
