@@ -1,5 +1,6 @@
-import json
+import re
 import os
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -27,6 +28,26 @@ class SQLiteStorage(StorageBackend):
 
     def initialize(self) -> None:
         Base.metadata.create_all(bind=self.engine)
+
+    def _expand_variables(self, value: str, path: str, visited: set = None) -> str:
+        if visited is None:
+            visited = set()
+
+        if path in visited:
+            raise ValueError(f"Circular reference detected: {path}")
+
+        visited.add(path)
+
+        def replace_var(match):
+            var_name = match.group(1)
+            try:
+                var_secret = self.get_secret(var_name)
+                # Recursively expand the referenced value
+                return self._expand_variables(var_secret.value, var_name, visited.copy())
+            except:
+                return match.group(0)  # Leave unchanged if not found
+
+        return re.sub(r'\$\{([^}]+)\}', replace_var, value)
 
     def set_secret(
         self, path: str, value: str, secret_type: str = "secret", tags: Optional[list[str]] = None
@@ -96,9 +117,11 @@ class SQLiteStorage(StorageBackend):
 
             decrypted_value = self.encryptor.decrypt(secret_model.encrypted_value)
 
+            expanded_value = self._expand_variables(decrypted_value, path)
+
             return Secret(
                 path=secret_model.path,
-                value=decrypted_value,
+                value=expanded_value,
                 type=SecretType(secret_model.type),
                 version=secret_model.version,
                 created_at=secret_model.created_at,

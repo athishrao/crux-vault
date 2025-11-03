@@ -196,19 +196,19 @@ crux import-env .env.staging --prefix staging
 
 ### Shell Integration
 
-#### `unified shell-env`
+#### `crux shell-env`
 Export secrets as shell environment variables.
 ```bash
 # Load all secrets into current shell
-eval $(unified shell-env)
+eval $(crux shell-env)
 
 # Load secrets with prefix
-eval $(unified shell-env database/)
+eval $(crux shell-env database/)
 
 # Different shell formats
-eval $(unified shell-env --format bash)   # default
-eval $(unified shell-env --format fish)
-eval $(unified shell-env --format powershell)
+eval $(crux shell-env --format bash)   # default
+eval $(crux shell-env --format fish)
+eval $(crux shell-env --format powershell)
 
 # Verify loaded
 echo $DATABASE_PASSWORD
@@ -221,47 +221,47 @@ export API_KEY="abc123"
 export STRIPE_KEY="sk_live_..."
 ```
 
-#### `unified unset-env`
+#### `crux unset-env`
 Remove secrets from environment.
 ```bash
 # Unset all secrets
-eval $(unified unset-env)
+eval $(crux unset-env)
 
 # Unset by prefix
-eval $(unified unset-env database/)
+eval $(crux unset-env database/)
 
 # Unset by tag
-eval $(unified unset-env --tag production)
+eval $(crux unset-env --tag production)
 
 # Different shells
-eval $(unified unset-env --format fish)
+eval $(crux unset-env --format fish)
 ```
 
 **Use case - switch environments:**
 ```bash
 # Load production secrets
-eval $(unified shell-env --tag production)
+eval $(crux shell-env --tag production)
 
 # Done with prod, clean up
-eval $(unified unset-env --tag production)
+eval $(crux unset-env --tag production)
 
 # Load dev secrets
-eval $(unified shell-env --tag development)
+eval $(crux shell-env --tag development)
 ```
 
 ### Security Scanning
 
-#### `unified scan`
+#### `crux scan`
 Detect hardcoded secrets in your codebase.
 ```bash
 # Scan current directory
-unified scan .
+crux scan .
 
 # Scan specific path
-unified scan src/
+crux scan src/
 
 # Scan single file
-unified scan config.py
+crux scan config.py
 ```
 
 **What it detects:**
@@ -279,6 +279,47 @@ config.py:12 - Possible API Key
 utils.py:45 - Possible Password
 .env.backup:3 - AWS Access Key
 ```
+
+### Variable Expansion
+
+CruxVault supports dynamic variable expansion using `${VAR}` syntax. Variables are resolved at read-time, so updates automatically propagate.
+```bash
+# Set base URL
+crux set API_URL 'https://api.example.com'
+
+# Reference it in other secrets
+crux set USERS_ENDPOINT '${API_URL}/v1/users'
+crux set POSTS_ENDPOINT '${API_URL}/v1/posts'
+
+# Get expanded value
+crux get USERS_ENDPOINT
+# Output: https://api.example.com/v1/users
+
+# Update base URL
+crux set API_URL 'https://api.production.com'
+
+# Dependent secrets automatically updated
+crux get USERS_ENDPOINT
+# Output: https://api.production.com/v1/users
+```
+
+**Nested expansion:**
+```bash
+crux set DB_HOST "localhost"
+crux set DB_PORT "5432"
+crux set DB_CONN 'postgresql://${DB_HOST}:${DB_PORT}'
+crux set FULL_CONN '${DB_CONN}/myapp'
+
+crux get FULL_CONN
+# Output: postgresql://localhost:5432/myapp
+```
+
+**Notes:**
+- Bash is notorious for exanding Vars before running the cmd, use single quotes ONLY when using Variables
+- Variables expand recursively
+- Circular references are detected and raise an error
+- Missing variables are left as-is: `${MISSING}` stays `${MISSING}`
+- Raw values stored encrypted; expansion happens on read
 
 ## Python API
 
