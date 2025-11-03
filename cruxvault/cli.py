@@ -6,12 +6,9 @@ import secrets as secrets_lib
 import subprocess
 from typing import Optional, Any
 
-from cruxvault.audit.logger import AuditLogger
 from cruxvault.models import SecretType
 from cruxvault.config import ConfigManager
 from cruxvault.crypto.encryption import Encryptor
-from cruxvault.crypto.utils import get_or_create_master_key
-from cruxvault.storage.local import SQLiteStorage
 from cruxvault.utils.console import (
     console,
     create_history_table,
@@ -21,6 +18,7 @@ from cruxvault.utils.console import (
     print_success,
     print_warning,
 )
+from cruxvault.utils.utils import get_storage_and_audit
 
 app = typer.Typer(
     help="Unified secrets, configs, and feature flags management",
@@ -28,25 +26,6 @@ app = typer.Typer(
 )
 dev_app = typer.Typer(help="Development mode commands")
 app.add_typer(dev_app, name="dev")
-
-def get_storage_and_audit() -> tuple[SQLiteStorage, AuditLogger]:
-    config_manager = ConfigManager()
-    config = config_manager.load_config()
-
-    master_key = get_or_create_master_key()
-    encryptor = Encryptor(master_key)
-
-    storage_path = config_manager.get_storage_path()
-    storage = SQLiteStorage(storage_path, encryptor)
-
-    audit_path = config_manager.get_audit_path()
-    audit_logger = AuditLogger(
-        audit_path,
-        enabled=config.audit.enabled,
-        log_reads=config.audit.log_reads,
-    )
-
-    return storage, audit_logger
 
 @app.command()
 def init() -> None:
@@ -126,7 +105,7 @@ def get(
         if quiet:
             print(secret.value)
         elif json_output:
-            console.print_json(data=secret.model_dump())
+            console.print_json(data=secret.model_dump(mode="json"))
         else:
             console.print(secret.value)
 
@@ -370,6 +349,9 @@ def import_env(
                 key, value = line.split("=", 1)
                 key = key.strip()
                 value = value.strip().strip('"').strip("'")
+
+                if not value:
+                    continue
 
                 path = key.lower().replace("_", "/")
 

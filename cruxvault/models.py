@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class SecretType(str, Enum):
@@ -21,8 +21,12 @@ class Secret(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Tags for organization")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime):
+        return value.isoformat()
+    @field_serializer("updated_at")
+    def serialize_updated_at(self, value: datetime):
+        return value.isoformat()
 
 
 class SecretVersion(BaseModel):
@@ -32,8 +36,9 @@ class SecretVersion(BaseModel):
     created_at: datetime
     created_by: Optional[str] = None
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime):
+        return value.isoformat()
 
 
 class AuditEntry(BaseModel):
@@ -45,8 +50,9 @@ class AuditEntry(BaseModel):
     error: Optional[str] = Field(default=None, description="Error message if failed")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    @field_serializer("timestamp")
+    def serialize_timestamp(self, value: datetime):
+        return value.isoformat()
 
 
 class StorageConfig(BaseModel):
@@ -65,7 +71,3 @@ class AppConfig(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     default_tags: list[str] = Field(default_factory=list, description="Default tags for secrets")
     audit: AuditConfig = Field(default_factory=AuditConfig)
-
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
-
