@@ -194,6 +194,92 @@ crux import-env .env.production
 crux import-env .env.staging --prefix staging
 ```
 
+### Shell Integration
+
+#### `unified shell-env`
+Export secrets as shell environment variables.
+```bash
+# Load all secrets into current shell
+eval $(unified shell-env)
+
+# Load secrets with prefix
+eval $(unified shell-env database/)
+
+# Different shell formats
+eval $(unified shell-env --format bash)   # default
+eval $(unified shell-env --format fish)
+eval $(unified shell-env --format powershell)
+
+# Verify loaded
+echo $DATABASE_PASSWORD
+```
+
+**Output example:**
+```bash
+export DATABASE_PASSWORD="secret123"
+export API_KEY="abc123"
+export STRIPE_KEY="sk_live_..."
+```
+
+#### `unified unset-env`
+Remove secrets from environment.
+```bash
+# Unset all secrets
+eval $(unified unset-env)
+
+# Unset by prefix
+eval $(unified unset-env database/)
+
+# Unset by tag
+eval $(unified unset-env --tag production)
+
+# Different shells
+eval $(unified unset-env --format fish)
+```
+
+**Use case - switch environments:**
+```bash
+# Load production secrets
+eval $(unified shell-env --tag production)
+
+# Done with prod, clean up
+eval $(unified unset-env --tag production)
+
+# Load dev secrets
+eval $(unified shell-env --tag development)
+```
+
+### Security Scanning
+
+#### `unified scan`
+Detect hardcoded secrets in your codebase.
+```bash
+# Scan current directory
+unified scan .
+
+# Scan specific path
+unified scan src/
+
+# Scan single file
+unified scan config.py
+```
+
+**What it detects:**
+- API keys and tokens
+- Passwords in code
+- Private keys
+- AWS credentials
+- Database connection strings
+- JWT tokens
+
+**Example output:**
+```
+⚠ Potential secrets found:
+config.py:12 - Possible API Key
+utils.py:45 - Possible Password
+.env.backup:3 - AWS Access Key
+```
+
 ## Python API
 
 Use CruxVault programmatically in your Python applications.
