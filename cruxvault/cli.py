@@ -1,6 +1,9 @@
 import os
 import sys
+import json
 import typer
+import secrets as secrets_lib
+import subprocess
 from typing import Optional, Any
 
 from cruxvault.audit.logger import AuditLogger
@@ -151,7 +154,7 @@ def list(
             return
 
         if json_output:
-            output = [s.model_dump() for s in secrets]
+            output = [s.model_dump(mode="json") for s in secrets]
             if not show_values:
                 for item in output:
                     item["value"] = "•" * 8
@@ -273,13 +276,13 @@ def dev_start(
             ("database/host", "localhost"),
             ("database/port", "5432"),
             ("database/username", "dev_user"),
-            ("database/password", secrets.token_urlsafe(16)),
-            ("api/key", secrets.token_urlsafe(32)),
-            ("api/secret", secrets.token_urlsafe(32)),
-            ("stripe/public_key", f"pk_test_{secrets.token_urlsafe(16)}"),
-            ("stripe/secret_key", f"sk_test_{secrets.token_urlsafe(16)}"),
-            ("jwt/secret", secrets.token_urlsafe(32)),
-            ("encryption/key", secrets.token_urlsafe(32)),
+            ("database/password", secrets_lib.token_urlsafe(16)),
+            ("api/key", secrets_lib.token_urlsafe(32)),
+            ("api/secret", secrets_lib.token_urlsafe(32)),
+            ("stripe/public_key", f"pk_test_{secrets_lib.token_urlsafe(16)}"),
+            ("stripe/secret_key", f"sk_test_{secrets_lib.token_urlsafe(16)}"),
+            ("jwt/secret", secrets_lib.token_urlsafe(32)),
+            ("encryption/key", secrets_lib.token_urlsafe(32)),
         ]
 
         created = 0
@@ -388,6 +391,87 @@ def import_env(
     except Exception as e:
         print_error(f"Failed to import secrets: {e}")
         sys.exit(1)
+
+
+@app.command()
+def shell_env(
+    prefix: Optional[str] = typer.Argument(None),
+    format: str = typer.Option("bash", help="Shell format: bash, fish, powershell")
+) -> None:
+    try:
+        storage, audit_logger = get_storage_and_audit()
+        secrets = storage.list_secrets(prefix)
+
+        for secret in secrets:
+            env_key = secret.path.upper().replace('/', '_').replace('-', '_')
+
+            if format == "bash":
+                console.print(f'export {env_key}="{secret.value}"')
+            elif format == "fish":
+                console.print(f'set -x {env_key} "{secret.value}"')
+            elif format == "powershell":
+                console.print(f'$env:{env_key}="{secret.value}"')
+            audit_logger.log(
+                    "shell_env", ".", success=True, metadata={"env_var_name": env_key}
+            )
+
+    except Exception as e:
+        print_error(f"Failed to apply env vars to shell: {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def scan(
+    path: str = typer.Argument(".", help="Path to scan"),
+) -> None:
+    try:
+        result = subprocess.run(
+            ["detect-secrets", "scan", path],
+            capture_output=True,
+            text=True
+        )
+        output = json.loads(result.stdout)
+
+        if not output.get("results"):
+            print_info("No secrets detected!")
+        else:
+            print_warning("Potential secrets found:")
+            console.print(output["results"])
+
+    except Exception as e:
+        print_error(f"Failed to scan codebase for potential secrets: {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def unset_env(
+    prefix: Optional[str] = typer.Argument(None),
+    tag: Optional[str] = typer.Option(None, help="Filter by tag"),
+    format: str = typer.Option("bash", help="Shell format: bash, fish, powershell")
+) -> None:
+    try:
+        storage, audit_logger = get_storage_and_audit()
+        secrets = storage.list_secrets(prefix)
+
+        if tag:
+            secrets = [s for s in secrets if tag in s.tags]
+
+        for secret in secrets:
+            env_key = secret.path.upper().replace('/', '_').replace('-', '_')
+
+            if format == "bash":
+                console.print(f'unset {env_key};')
+            elif format == "fish":
+                console.print(f'set -e {env_key};')
+            elif format == "powershell":
+                console.print(f'Remove-Item Env:{env_key};')
+            audit_logger.log(
+                    "unset_env", ".", success=True, metadata={"env_var_name": env_key}
+            )
+
+    except Exception as e:
+        print_error(f"Failed to unset vars in shell: {e}")
+        raise typer.Exit(1)
 
 
 def main() -> None:
