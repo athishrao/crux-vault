@@ -49,3 +49,34 @@ class AuditLogModel(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     error: Mapped[str] = mapped_column(Text, nullable=True)
     meta_data: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # JSON as string
+
+
+class BranchModel(Base):
+    __tablename__ = "branches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    head_commit_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class CommitModel(Base):
+    __tablename__ = "commits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    parent_id: Mapped[int] = mapped_column(Integer, nullable=True, index=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str] = mapped_column(String(200), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    branch: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+
+class CommitSecretModel(Base):
+    __tablename__ = "commit_secrets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    commit_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    path: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(String(50), nullable=False, default="secret")
+    tags: Mapped[str] = mapped_column(Text, nullable=False, default="")  # JSON array as string

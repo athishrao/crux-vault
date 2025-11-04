@@ -82,3 +82,16 @@ class ConfigManager:
             audit_path = os.path.join(self.find_crux_root(), self.config_dir, os.path.basename(audit_path))
 
         return audit_path
+
+    def get_current_branch(self) -> str:
+        git_config_path = os.path.join(self.find_crux_root(), self.config_dir, "HEAD")
+        if os.path.exists(git_config_path):
+            with open(git_config_path, "r") as f:
+                return f.read().strip()
+        return "main"
+
+    def set_current_branch(self, branch: str) -> None:
+        git_config_path = os.path.join(self.find_crux_root(), self.config_dir, "HEAD")
+        Path(os.path.join(self.find_crux_root(), self.config_dir)).mkdir(parents=True, exist_ok=True)
+        with open(git_config_path, "w") as f:
+            f.write(branch)

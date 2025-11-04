@@ -4,6 +4,7 @@ import json
 import typer
 import secrets as secrets_lib
 import subprocess
+from rich.table import Table
 from typing import Optional, Any
 
 from cruxvault.models import SecretType
@@ -18,7 +19,7 @@ from cruxvault.utils.console import (
     print_success,
     print_warning,
 )
-from cruxvault.utils.utils import get_storage_and_audit, get_audit_logger
+from cruxvault.utils.utils import get_storage_and_audit, get_audit_logger, get_storage
 
 app = typer.Typer(
     help="Unified secrets, configs, and feature flags management",
@@ -41,10 +42,15 @@ def init() -> None:
         storage, audit_logger = get_storage_and_audit()
         storage.initialize()
 
+        storage.create_branch("main")
+        config_manager.set_current_branch("main")
+
         audit_logger.log("init", ".", success=True)
 
         print_success(f"Initialized cruxvault in {config_manager.config_dir}")
         print_info(f"Storage: {config_manager.get_storage_path()}")
+        print_info(f"Audit log: {config_manager.get_audit_path()}")
+        print_info(f"Branch: main")
 
     except Exception as e:
         audit_logger = get_audit_logger()
@@ -463,6 +469,282 @@ def unset_env(
         print_error(f"Failed to unset vars in shell: {e}")
         raise typer.Exit(1)
 
+@app.command()
+def branch(
+    name: Optional[str] = typer.Argument(None, help="Branch name to create"),
+    list_branches: bool = typer.Option(False, "--list", "-l", help="List all branches"),
+    delete: Optional[str] = typer.Option(None, "--delete", "-d", help="Delete a branch"),
+    from_branch: Optional[str] = typer.Option(None, "--from", help="Create from branch"),
+) -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+
+        if list_branches:
+            branches = storage.list_branches()
+            current = config_mgr.get_current_branch()
+
+            if not branches:
+                console.print("No branches found")
+                return
+
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("Branch")
+            table.add_column("Commits")
+            table.add_column("Created")
+
+            for b in branches:
+                marker = "* " if b.name == current else "  "
+                commits = len(storage.get_commit_history(b.name, limit=1000))
+                table.add_row(
+                    f"{marker}{b.name}",
+                    str(commits) if b.head_commit_id else "0",
+                    b.created_at.strftime("%Y-%m-%d %H:%M"),
+                )
+
+            console.print(table)
+
+        elif delete:
+            if storage.delete_branch(delete):
+                print_success(f"Deleted branch '{delete}'")
+            else:
+                print_error(f"Branch '{delete}' not found")
+                sys.exit(1)
+
+        elif name:
+            branch_obj = storage.create_branch(name, from_branch=from_branch)
+            print_success(f"Created branch '{name}'")
+            print_success(f"Run `crux checkout '{name}'` to switch to the branch")
+        else:
+            current = config_mgr.get_current_branch()
+            console.print(f"On branch: [cyan]{current}[/cyan]")
+
+    except Exception as e:
+        print_error(f"Branch operation failed: {e}")
+        sys.exit(1)
+
+
+@app.command()
+def checkout(
+    branch_name: str = typer.Argument(..., help="Branch name to checkout"),
+) -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+
+        branch = storage.get_branch(branch_name)
+        if not branch:
+            print_error(f"Branch '{branch_name}' not found")
+            sys.exit(1)
+
+        confirm = typer.confirm(f"If branch is not clean, proceeding will clear all your dirty secrets(pun intended). Proceed to switching to {branch_name}?")
+        if not confirm:
+            print_info("Cancelled")
+            sys.exit(0)
+
+        storage.checkout_branch(branch_name)
+        config_mgr.set_current_branch(branch_name)
+
+        print_success(f"Switched to branch '{branch_name}'")
+
+    except Exception as e:
+        print_error(f"Checkout failed: {e}")
+        sys.exit(1)
+
+
+@app.command()
+def commit(
+    message: str = typer.Option(..., "--message", "-m", help="Commit message"),
+) -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+        current_branch = config_mgr.get_current_branch()
+
+        commit_obj = storage.commit(current_branch, message)
+        print_success(f"[{commit_obj.branch} {commit_obj.id[:7] if isinstance(commit_obj.id, str) else commit_obj.id}] {commit_obj.message}")
+
+    except Exception as e:
+        print_error(f"Commit failed: {e}")
+        sys.exit(1)
+
+
+@app.command()
+def log(
+    branch_name: Optional[str] = typer.Argument(None, help="Branch name (default: current)"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Number of commits to show"),
+) -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+
+        if not branch_name:
+            branch_name = config_mgr.get_current_branch()
+
+        commits = storage.get_commit_history(branch_name, limit=limit)
+
+        if not commits:
+            console.print(f"No commits on branch '{branch_name}'")
+            return
+
+        for c in commits:
+            console.print(f"[yellow]commit {c.id}[/yellow]")
+            console.print(f"Author: {c.author}")
+            console.print(f"Date:   {c.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            console.print(f"\n    {c.message}\n")
+
+    except Exception as e:
+        print_error(f"Log failed: {e}")
+        sys.exit(1)
+
+
+@app.command()
+def status() -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+        current_branch = config_mgr.get_current_branch()
+
+        console.print(f"On branch: [cyan]{current_branch}[/cyan]\n")
+
+        status = storage.get_status(current_branch)
+
+        if not any(status.values()):
+            console.print("[green]Nothing to commit, working tree clean[/green]")
+            return
+
+        if status["added"]:
+            console.print("[green]New secrets:[/green]")
+            for path in status["added"]:
+                console.print(f"  [green]+ {path}[/green]")
+
+        if status["modified"]:
+            console.print("[yellow]Modified secrets:[/yellow]")
+            for path in status["modified"]:
+                console.print(f"  [yellow]M {path}[/yellow]")
+
+        if status["deleted"]:
+            console.print("[red]Deleted secrets:[/red]")
+            for path in status["deleted"]:
+                console.print(f"  [red]- {path}[/red]")
+
+        console.print(f"\nRun 'crux commit -m \"message\"' to commit changes")
+
+    except Exception as e:
+        print_error(f"Status failed: {e}")
+        sys.exit(1)
+
+
+@app.command()
+def diff(
+    commit1: Optional[str] = typer.Argument(None, help="First commit ID"),
+    commit2: Optional[str] = typer.Argument(None, help="Second commit ID"),
+) -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+        current_branch = config_mgr.get_current_branch()
+
+        if not commit1:
+            status = storage.get_status(current_branch)
+            if not any(status.values()):
+                console.print("No changes")
+                return
+
+            if status["added"]:
+                for path in status["added"]:
+                    console.print(f"[green]+ {path}: <new>[/green]")
+
+            if status["modified"]:
+                for path in status["modified"]:
+                    console.print(f"[yellow]M {path}: <modified>[/yellow]")
+
+            if status["deleted"]:
+                for path in status["deleted"]:
+                    console.print(f"[red]- {path}: <deleted>[/red]")
+            return
+
+        if not commit2:
+            print_error("Please provide both commit IDs")
+            sys.exit(1)
+
+        diff_entries = storage.diff_commits(int(commit1), int(commit2))
+
+        if not diff_entries:
+            console.print("No differences")
+            return
+
+        for entry in diff_entries:
+            if entry.status == "added":
+                console.print(f"[green]+ {entry.path}[/green]")
+                console.print(f"  [green]{entry.new_value}[/green]")
+            elif entry.status == "modified":
+                console.print(f"[yellow]M {entry.path}[/yellow]")
+                console.print(f"  [red]- {entry.old_value}[/red]")
+                console.print(f"  [green]+ {entry.new_value}[/green]")
+            elif entry.status == "deleted":
+                console.print(f"[red]- {entry.path}[/red]")
+                console.print(f"  [red]{entry.old_value}[/red]")
+
+    except Exception as e:
+        print_error(f"Diff failed: {e}")
+        sys.exit(1)
+
+
+@app.command()
+def reset(
+    commit_id: int = typer.Argument(..., help="Commit ID to reset to"),
+    hard: bool = typer.Option(False, "--hard", help="Discard uncommitted changes"),
+) -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+        current_branch = config_mgr.get_current_branch()
+
+        storage.rollback_to_commit(current_branch, commit_id)
+        print_success(f"Reset {current_branch} to commit {commit_id}")
+
+    except Exception as e:
+        print_error(f"Reset failed: {e}")
+        sys.exit(1)
+
+
+@app.command()
+def merge(
+    source_branch: str = typer.Argument(..., help="Branch to merge from"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force merge on conflicts"),
+) -> None:
+    try:
+        config_mgr = ConfigManager()
+        storage = get_storage(config_mgr)
+        current_branch = config_mgr.get_current_branch()
+
+        if current_branch == source_branch:
+            print_error("Cannot merge branch into itself")
+            sys.exit(1)
+
+        success, conflicts = storage.merge_branch(current_branch, source_branch)
+
+        if conflicts and not force:
+            console.print("[red]Merge conflicts detected:[/red]\n")
+            for conflict in conflicts:
+                console.print(f"[yellow]{conflict.path}:[/yellow]")
+                console.print(f"  Current:  {conflict.current_value}")
+                console.print(f"  Incoming: {conflict.incoming_value}\n")
+            console.print("Resolve conflicts manually or use --force to accept incoming changes")
+            sys.exit(1)
+
+        if success:
+            # Create merge commit
+            storage.commit(current_branch, f"Merge branch '{source_branch}' into {current_branch}")
+            print_success(f"Merged '{source_branch}' into '{current_branch}'")
+        else:
+            print_error("Merge failed")
+            sys.exit(1)
+
+    except Exception as e:
+        print_error(f"Merge failed: {e}")
+        sys.exit(1)
 
 def main() -> None:
     app()

@@ -71,3 +71,39 @@ class AppConfig(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     default_tags: list[str] = Field(default_factory=list, description="Default tags for secrets")
     audit: AuditConfig = Field(default_factory=AuditConfig)
+
+
+class Branch(BaseModel):
+    name: str
+    head_commit_id: Optional[int] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime):
+        return value.isoformat()
+
+
+class Commit(BaseModel):
+    id: int
+    parent_id: Optional[int] = None
+    message: str
+    author: str
+    timestamp: datetime
+    branch: str
+
+    @field_serializer("timestamp")
+    def serialize_timestamp(self, value: datetime):
+        return value.isoformat()
+
+
+class DiffEntry(BaseModel):
+    path: str
+    status: str  # added, modified, deleted
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+
+
+class MergeConflict(BaseModel):
+    path: str
+    current_value: str
+    incoming_value: str
