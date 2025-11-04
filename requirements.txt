@@ -1,4 +1,6 @@
 typer[all]>=0.12.0
+streamlit>=1.28.0
+pandas>=2.0.0
 rich>=13.7.0
 cryptography>=42.0.0
 pydantic>=2.5.0
