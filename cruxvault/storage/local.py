@@ -9,9 +9,26 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from cruxvault.crypto.encryption import Encryptor
-from cruxvault.models import Secret, SecretType, SecretVersion, AuditEntry
 from cruxvault.storage.base import StorageBackend
-from cruxvault.storage.models import Base, SecretModel, SecretVersionModel, AuditLogModel
+from cruxvault.models import (
+    AuditEntry,
+    Branch,
+    Commit,
+    DiffEntry,
+    MergeConflict,
+    Secret,
+    SecretType,
+    SecretVersion
+)
+from cruxvault.storage.models import (
+    AuditLogModel,
+    Base,
+    BranchModel,
+    CommitModel,
+    CommitSecretModel,
+    SecretModel,
+    SecretVersionModel,
+)
 
 
 class SQLiteStorage(StorageBackend):
@@ -282,3 +299,361 @@ class SQLiteStorage(StorageBackend):
     def close(self) -> None:
         self.engine.dispose()
 
+
+    def create_branch(self, name: str, from_branch: Optional[str] = None) -> Branch:
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel).where(BranchModel.name == name)
+            existing = session.execute(stmt).scalar_one_or_none()
+            if existing:
+                raise ValueError(f"Branch '{name}' already exists")
+
+            # Get head commit from source branch if specified
+            head_commit_id = None
+            if from_branch:
+                stmt = select(BranchModel).where(BranchModel.name == from_branch)
+                source_branch = session.execute(stmt).scalar_one_or_none()
+                if not source_branch:
+                    raise ValueError(f"Branch '{from_branch}' not found")
+                head_commit_id = source_branch.head_commit_id
+
+            branch = BranchModel(name=name, head_commit_id=head_commit_id)
+            session.add(branch)
+            session.commit()
+
+            return Branch(
+                name=branch.name, head_commit_id=branch.head_commit_id, created_at=branch.created_at
+            )
+
+
+    def list_branches(self) -> list[Branch]:
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel)
+            branches = session.execute(stmt).scalars().all()
+            return [
+                Branch(name=b.name, head_commit_id=b.head_commit_id, created_at=b.created_at)
+                for b in branches
+            ]
+
+
+    def delete_branch(self, name: str) -> bool:
+        with self.SessionLocal() as session:
+            if name == "main":
+                raise ValueError("Cannot delete main branch")
+
+            stmt = select(BranchModel).where(BranchModel.name == name)
+            branch = session.execute(stmt).scalar_one_or_none()
+            if not branch:
+                return False
+
+            session.delete(branch)
+            session.commit()
+            return True
+
+
+    def get_branch(self, name: str) -> Optional[Branch]:
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel).where(BranchModel.name == name)
+            branch = session.execute(stmt).scalar_one_or_none()
+            if not branch:
+                return None
+            return Branch(
+                name=branch.name, head_commit_id=branch.head_commit_id, created_at=branch.created_at
+            )
+
+
+    def commit(self, branch_name: str, message: str, author: Optional[str] = None) -> Commit:
+        if not author:
+            author = os.getenv("USER", "unknown")
+
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel).where(BranchModel.name == branch_name)
+            branch = session.execute(stmt).scalar_one_or_none()
+            if not branch:
+                raise ValueError(f"Branch '{branch_name}' not found")
+
+            commit = CommitModel(
+                parent_id=branch.head_commit_id,
+                message=message,
+                author=author,
+                timestamp=datetime.utcnow(),
+                branch=branch_name,
+            )
+            session.add(commit)
+            session.flush()  # Get commit ID
+
+            # Snapshot all current secrets
+            stmt = select(SecretModel)
+            secrets = session.execute(stmt).scalars().all()
+
+            for secret in secrets:
+                commit_secret = CommitSecretModel(
+                    commit_id=commit.id,
+                    path=secret.path,
+                    encrypted_value=secret.encrypted_value,
+                    type=secret.type,
+                    tags=secret.tags,
+                )
+                session.add(commit_secret)
+
+            branch.head_commit_id = commit.id
+            session.commit()
+
+            return Commit(
+                id=commit.id,
+                parent_id=commit.parent_id,
+                message=commit.message,
+                author=commit.author,
+                timestamp=commit.timestamp,
+                branch=commit.branch,
+            )
+
+
+    def get_commit_history(self, branch_name: str, limit: int = 10) -> list[Commit]:
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel).where(BranchModel.name == branch_name)
+            branch = session.execute(stmt).scalar_one_or_none()
+            if not branch:
+                raise ValueError(f"Branch '{branch_name}' not found")
+
+            if not branch.head_commit_id:
+                return []
+
+            commits = []
+            current_commit_id = branch.head_commit_id
+
+            while current_commit_id and len(commits) < limit:
+                stmt = select(CommitModel).where(CommitModel.id == current_commit_id)
+                commit = session.execute(stmt).scalar_one_or_none()
+                if not commit:
+                    break
+
+                commits.append(
+                    Commit(
+                        id=commit.id,
+                        parent_id=commit.parent_id,
+                        message=commit.message,
+                        author=commit.author,
+                        timestamp=commit.timestamp,
+                        branch=commit.branch,
+                    )
+                )
+                current_commit_id = commit.parent_id
+
+            return commits
+
+
+    def checkout_branch(self, branch_name: str) -> None:
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel).where(BranchModel.name == branch_name)
+            branch = session.execute(stmt).scalar_one_or_none()
+            if not branch:
+                raise ValueError(f"Branch '{branch_name}' not found")
+
+            for secret in session.execute(select(SecretModel)).scalars().all():
+                session.delete(secret)
+
+            # Restore from commit if branch has commits
+            if branch.head_commit_id:
+                stmt = select(CommitSecretModel).where(
+                    CommitSecretModel.commit_id == branch.head_commit_id
+                )
+                commit_secrets = session.execute(stmt).scalars().all()
+
+                for cs in commit_secrets:
+                    secret = SecretModel(
+                        path=cs.path,
+                        encrypted_value=cs.encrypted_value,
+                        type=cs.type,
+                        tags=cs.tags,
+                        version=1,
+                    )
+                    session.add(secret)
+
+            session.commit()
+
+
+    def get_status(self, branch_name: str) -> dict:
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel).where(BranchModel.name == branch_name)
+            branch = session.execute(stmt).scalar_one_or_none()
+            if not branch or not branch.head_commit_id:
+                stmt = select(SecretModel)
+                current_secrets = {s.path: s for s in session.execute(stmt).scalars().all()}
+                return {
+                    "added": list(current_secrets.keys()),
+                    "modified": [],
+                    "deleted": [],
+                }
+
+            stmt = select(CommitSecretModel).where(
+                CommitSecretModel.commit_id == branch.head_commit_id
+            )
+            committed = {cs.path: cs for cs in session.execute(stmt).scalars().all()}
+
+            stmt = select(SecretModel)
+            current_secrets = {s.path: s for s in session.execute(stmt).scalars().all()}
+
+            added = []
+            modified = []
+            deleted = []
+
+            # Find added and modified
+            for path, secret in current_secrets.items():
+                if path not in committed:
+                    added.append(path)
+                elif secret.encrypted_value != committed[path].encrypted_value:
+                    modified.append(path)
+
+            # Find deleted
+            for path in committed:
+                if path not in current_secrets:
+                    deleted.append(path)
+
+            return {"added": added, "modified": modified, "deleted": deleted}
+
+
+    def diff_commits(self, commit1_id: int, commit2_id: int) -> list[DiffEntry]:
+        with self.SessionLocal() as session:
+            stmt1 = select(CommitSecretModel).where(CommitSecretModel.commit_id == commit1_id)
+            secrets1 = {cs.path: cs for cs in session.execute(stmt1).scalars().all()}
+
+            stmt2 = select(CommitSecretModel).where(CommitSecretModel.commit_id == commit2_id)
+            secrets2 = {cs.path: cs for cs in session.execute(stmt2).scalars().all()}
+
+            diff = []
+
+            # Find added and modified
+            for path, cs2 in secrets2.items():
+                if path not in secrets1:
+                    diff.append(
+                        DiffEntry(
+                            path=path,
+                            status="added",
+                            old_value=None,
+                            new_value=self.encryptor.decrypt(cs2.encrypted_value),
+                        )
+                    )
+                elif cs2.encrypted_value != secrets1[path].encrypted_value:
+                    diff.append(
+                        DiffEntry(
+                            path=path,
+                            status="modified",
+                            old_value=self.encryptor.decrypt(secrets1[path].encrypted_value),
+                            new_value=self.encryptor.decrypt(cs2.encrypted_value),
+                        )
+                    )
+
+            # Find deleted
+            for path in secrets1:
+                if path not in secrets2:
+                    diff.append(
+                        DiffEntry(
+                            path=path,
+                            status="deleted",
+                            old_value=self.encryptor.decrypt(secrets1[path].encrypted_value),
+                            new_value=None,
+                        )
+                    )
+
+            return diff
+
+
+    def rollback_to_commit(self, branch_name: str, commit_id: int) -> None:
+        with self.SessionLocal() as session:
+            stmt = select(CommitModel).where(CommitModel.id == commit_id)
+            commit = session.execute(stmt).scalar_one_or_none()
+            if not commit:
+                raise ValueError(f"Commit {commit_id} not found")
+
+            stmt = select(BranchModel).where(BranchModel.name == branch_name)
+            branch = session.execute(stmt).scalar_one_or_none()
+            if not branch:
+                raise ValueError(f"Branch '{branch_name}' not found")
+
+            branch.head_commit_id = commit_id
+            
+            # Restore secrets from commit
+            for secret in session.execute(select(SecretModel)).scalars().all():
+                session.delete(secret)
+
+            stmt = select(CommitSecretModel).where(CommitSecretModel.commit_id == commit_id)
+            commit_secrets = session.execute(stmt).scalars().all()
+
+            for cs in commit_secrets:
+                secret = SecretModel(
+                    path=cs.path,
+                    encrypted_value=cs.encrypted_value,
+                    type=cs.type,
+                    tags=cs.tags,
+                    version=1,
+                )
+                session.add(secret)
+
+            session.commit()
+
+
+    def merge_branch(
+        self, target_branch: str, source_branch: str
+    ) -> tuple[bool, list[MergeConflict]]:
+        with self.SessionLocal() as session:
+            stmt = select(BranchModel).where(BranchModel.name == target_branch)
+            target = session.execute(stmt).scalar_one_or_none()
+            if not target:
+                raise ValueError(f"Branch '{target_branch}' not found")
+
+            stmt = select(BranchModel).where(BranchModel.name == source_branch)
+            source = session.execute(stmt).scalar_one_or_none()
+            if not source:
+                raise ValueError(f"Branch '{source_branch}' not found")
+
+            if not source.head_commit_id:
+                return True, []  # Nothing to merge
+
+            # Get secrets from both branches
+            target_secrets = {}
+            if target.head_commit_id:
+                stmt = select(CommitSecretModel).where(
+                    CommitSecretModel.commit_id == target.head_commit_id
+                )
+                target_secrets = {cs.path: cs for cs in session.execute(stmt).scalars().all()}
+
+            stmt = select(CommitSecretModel).where(
+                CommitSecretModel.commit_id == source.head_commit_id
+            )
+            source_secrets = {cs.path: cs for cs in session.execute(stmt).scalars().all()}
+
+            # Detect conflicts
+            conflicts = []
+            for path, source_cs in source_secrets.items():
+                if path in target_secrets:
+                    if source_cs.encrypted_value != target_secrets[path].encrypted_value:
+                        conflicts.append(
+                            MergeConflict(
+                                path=path,
+                                current_value=self.encryptor.decrypt(
+                                    target_secrets[path].encrypted_value
+                                ),
+                                incoming_value=self.encryptor.decrypt(source_cs.encrypted_value),
+                            )
+                        )
+
+            if conflicts:
+                return False, conflicts
+
+            # No conflicts, perform merge
+            # Update all secrets to source state
+            for secret in session.execute(select(SecretModel)).scalars().all():
+                session.delete(secret)
+
+            for path, cs in source_secrets.items():
+                secret = SecretModel(
+                    path=cs.path,
+                    encrypted_value=cs.encrypted_value,
+                    type=cs.type,
+                    tags=cs.tags,
+                    version=1,
+                )
+                session.add(secret)
+
+            session.commit()
+            return True, []

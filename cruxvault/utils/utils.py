@@ -17,6 +17,15 @@ def get_audit_logger() -> AuditLogger:
     )
     return audit_logger
 
+def get_storage(config_manager: ConfigManager) -> SQLiteStorage:
+    config = config_manager.load_config()
+
+    master_key = get_or_create_master_key()
+    encryptor = Encryptor(master_key)
+
+    storage_path = config_manager.get_storage_path()
+    return SQLiteStorage(storage_path, encryptor)
+
 def get_storage_and_audit() -> tuple[SQLiteStorage, AuditLogger]:
     config_manager = ConfigManager()
     config = config_manager.load_config()
