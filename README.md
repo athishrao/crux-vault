@@ -6,6 +6,8 @@ Whether you’re wrangling local dev secrets or juggling production chaos, CruxV
 
 Available in 2 flavors - `CruxVault CLI` and `CruxVault Python API`
 
+⭐ Show some love, hit that star and make the code blush!
+
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -24,6 +26,10 @@ Available in 2 flavors - `CruxVault CLI` and `CruxVault Python API`
 ## Installation
 
 [Installation Doc](docs/INSTALLATION.md)
+
+## Simple GUI
+
+[GUI Setup Doc](docs/GUI.md)
 
 ## CLI Commands
 
