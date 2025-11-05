@@ -1,9 +1,12 @@
+import os
 import streamlit as st
-import cruxvault as crux
 import pandas as pd
-from datetime import datetime, timedelta
 import json
+import tempfile
 from pathlib import Path
+from datetime import datetime, timedelta
+
+import cruxvault as crux
 
 st.set_page_config(
     page_title="CruxVault Dashboard",
@@ -138,7 +141,7 @@ if page == "📊 Dashboard":
 elif page == "🔑 Secrets":
     st.title("🔑 Secrets Management")
     
-    tab1, tab2, tab3 = st.tabs(["📋 List", "➕ Add New", "🔍 Search"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 List", "➕ Add New", "Import/Export", "🔍 Search"])
     
     with tab1:
         col1, col2 = st.columns([3, 1])
@@ -203,6 +206,9 @@ elif page == "🔑 Secrets":
                                 st.error(f"Error: {e}")
                         
                         if st.button("🗑️ Delete", key=f"del_{secret['path']}", width='stretch', type="secondary"):
+                            st.session_state[f"confirm_{secret['path']}"] = True
+
+                        if st.session_state.get(f"confirm_{secret['path']}", False):
                             if st.button("⚠️ Confirm Delete", key=f"confirm_del_{secret['path']}", type="primary"):
                                 try:
                                     crux.delete(secret['path'])
@@ -241,6 +247,34 @@ elif page == "🔑 Secrets":
                         st.error(f"Error: {e}")
     
     with tab3:
+        st.subheader("Import from .env")
+        uploaded_file = st.file_uploader("Choose a .env file", type=['env', 'txt'])
+        if uploaded_file:
+            prefix = st.text_input("Import with prefix (optional)", placeholder="staging/")
+            if st.button("Import"):
+                # Recreate file in /tmp
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    file_path = os.path.join(tmpdir, uploaded_file.name)
+
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+
+                    num_imported = crux.import_env(file_path, prefix)
+
+                st.success(f"Imported {num_imported} keys from uploaded file!")
+        
+        st.markdown("---")
+        
+        st.subheader("Export to .env")
+        st.download_button(
+            label="Download All Secrets(as txt)",
+            data=crux.export_env(),
+            file_name="secrets.env",
+            mime="text/plain"
+        )
+            # st.info("Export feature requires CLI command: crux dev export")
+
+    with tab4:
         st.subheader("Search Secrets")
         search_term = st.text_input("Search by path", placeholder="Enter search term...")
         
@@ -340,7 +374,7 @@ elif page == "📈 Analytics":
 elif page == "⚙️ Settings":
     st.title("⚙️ Settings")
     
-    tab1, tab2, tab3 = st.tabs(["General", "Import/Export", "Security"])
+    tab1, tab2 = st.tabs(["General", "Security"])
     
     with tab1:
         st.subheader("General Settings")
@@ -349,27 +383,13 @@ elif page == "⚙️ Settings":
         if auto_refresh:
             st.info("Dashboard will refresh every 30 seconds")
         
-        theme = st.selectbox("Color Theme", ["Dark", "Light", "Auto"])
+        # theme = st.selectbox("Color Theme", ["Dark", "Light", "Auto"])
         
         st.subheader("Danger Zone")
         if st.button("🗑️ Clear All Audit Logs", type="secondary"):
             st.warning("This action cannot be undone!")
     
     with tab2:
-        st.subheader("Import from .env")
-        uploaded_file = st.file_uploader("Choose a .env file", type=['env', 'txt'])
-        if uploaded_file:
-            prefix = st.text_input("Import with prefix (optional)", placeholder="staging/")
-            if st.button("Import"):
-                st.info("Import feature requires CLI command: crux import-env")
-        
-        st.markdown("---")
-        
-        st.subheader("Export to .env")
-        if st.button("Export All Secrets"):
-            st.info("Export feature requires CLI command: crux dev export")
-    
-    with tab3:
         st.subheader("Security Information")
         
         st.info("🔐 Encryption: AES-256-GCM")

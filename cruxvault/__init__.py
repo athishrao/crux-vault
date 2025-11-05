@@ -100,6 +100,48 @@ class CruxVault:
     def rollback(self, path: str, version: int) -> None:
         self._storage.rollback(path, version)
 
+    def import_env(self, file_path: str, prefix: str = None) -> None:
+        storage, _ = get_storage_and_audit()
+        imported = 0
+        with open(file_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                   continue
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if not value:
+                    continue
+                path = key.lower().replace("_", "/")
+                if prefix:
+                    path = f"{prefix}/{path}"
+                try:
+                    storage.set_secret(path, value, "config", ["imported"])
+                    imported += 1
+                except Exception:
+                    continue
+        return imported
+
+    def export_env(self) -> dict:
+        storage, _ = get_storage_and_audit()
+        exported = 0
+        secrets_list = storage.list_secrets()
+        if not secrets_list:
+            return ""
+
+        lines = []
+        for secret in secrets_list:
+            # Convert path to env var name (database/password -> DATABASE_PASSWORD)
+            env_name = secret.path.replace("/", "_").replace("-", "_").upper()
+            lines.append(f'{env_name}="{secret.value}"')
+
+        env_content = "\n".join(lines)
+        return env_content
+
+
 _instance = None
 
 def _get_instance():
@@ -126,6 +168,11 @@ def history(path: str, print_: bool = False):
 def rollback(path: str, version: int):
     return _get_instance().rollback(path, version)
 
+def import_env(path: str, prefix: str = None):
+    return _get_instance().import_env(path, prefix)
 
-__all__ = ['CruxVault', 'get', 'set', 'delete', 'list', 'history', 'rollback']
+def export_env():
+    return _get_instance().export_env()
+
+__all__ = ['CruxVault', 'get', 'set', 'delete', 'list', 'history', 'rollback', 'import_env', 'export_env']
 
