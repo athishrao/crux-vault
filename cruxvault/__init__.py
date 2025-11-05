@@ -10,6 +10,7 @@ from rich.table import Table
 from cruxvault.storage.local import SQLiteStorage
 from cruxvault.crypto.encryption import Encryptor
 from cruxvault.utils.utils import get_storage_and_audit
+from cruxvault.config import ConfigManager
 
 class CruxVault:
     def __init__(self, root: Path = None):
@@ -141,6 +142,13 @@ class CruxVault:
         env_content = "\n".join(lines)
         return env_content
 
+    def get_audit_path(self) -> Path:
+        config = ConfigManager()
+        path = config.find_crux_root()
+        if not path:
+            return None
+        return path / config.config_dir / "audit.log"
+
 
 _instance = None
 
@@ -174,5 +182,8 @@ def import_env(path: str, prefix: str = None):
 def export_env():
     return _get_instance().export_env()
 
-__all__ = ['CruxVault', 'get', 'set', 'delete', 'list', 'history', 'rollback', 'import_env', 'export_env']
+def get_audit_path():
+    return _get_instance().get_audit_path()
+
+__all__ = ['CruxVault', 'get', 'set', 'delete', 'list', 'history', 'rollback', 'import_env', 'export_env', 'get_audit_path']
 

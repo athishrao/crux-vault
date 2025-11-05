@@ -60,7 +60,7 @@ def load_secrets():
 
 def load_audit_log():
     try:
-        log_path = Path(".cruxvault/audit.log")
+        log_path = crux.get_audit_path()
         if log_path.exists():
             logs = []
             with open(log_path, 'r') as f:
@@ -374,22 +374,9 @@ elif page == "📈 Analytics":
 elif page == "⚙️ Settings":
     st.title("⚙️ Settings")
     
-    tab1, tab2 = st.tabs(["General", "Security"])
+    tab1, tab2 = st.tabs(["Security", "Collaberation Settings"])
     
     with tab1:
-        st.subheader("General Settings")
-        
-        auto_refresh = st.checkbox("Auto-refresh dashboard", value=False)
-        if auto_refresh:
-            st.info("Dashboard will refresh every 30 seconds")
-        
-        # theme = st.selectbox("Color Theme", ["Dark", "Light", "Auto"])
-        
-        st.subheader("Danger Zone")
-        if st.button("🗑️ Clear All Audit Logs", type="secondary"):
-            st.warning("This action cannot be undone!")
-    
-    with tab2:
         st.subheader("Security Information")
         
         st.info("🔐 Encryption: AES-256-GCM")
@@ -397,6 +384,10 @@ elif page == "⚙️ Settings":
         
         st.subheader("Master Key")
         st.text("Master key is stored securely in system keychain")
+
+    with tab2:
+        st.info("Coming Soon...")
+
         
 st.markdown("---")
 st.caption("CruxVault Dashboard • Built with ❤️  in the Bay Area!")
