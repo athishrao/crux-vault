@@ -11,6 +11,10 @@ Available in 2 flavors - `CruxVault CLI` and `CruxVault Python API`
 ![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## Basic CLI Demo
+
+![](gifs/basics.gif)
+
 ## Features
 
 - **AES-256-GCM Encryption** - Military-grade encryption for all secrets at rest

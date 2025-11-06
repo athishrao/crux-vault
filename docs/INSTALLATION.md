@@ -29,3 +29,5 @@ Alternatively, add this to your requirements.txt
 ```bash
 crux @ git+https://github.com/athishrao/crux-vault.git
 ```
+
+![](../gifs/pip-install.gif)
