@@ -2,6 +2,7 @@
 
 __version__ = "0.1.0"
 
+import os
 from pathlib import Path
 from dataclasses import asdict
 from rich.console import Console
@@ -142,6 +143,14 @@ class CruxVault:
         env_content = "\n".join(lines)
         return env_content
 
+    def load_crux_secrets(self, prefix: str = None) -> None:
+        storage, _ = get_storage_and_audit()
+        secrets_list = storage.list_secrets(prefix)
+
+        for secret in secrets_list:
+            value = self.get(secret.path)
+            os.environ[secret.path] = value
+
     def get_audit_path(self) -> Path:
         config = ConfigManager()
         path = config.find_crux_root()
@@ -185,5 +194,8 @@ def export_env():
 def get_audit_path():
     return _get_instance().get_audit_path()
 
-__all__ = ['CruxVault', 'get', 'set', 'delete', 'list', 'history', 'rollback', 'import_env', 'export_env', 'get_audit_path']
+def load_crux_secrets():
+    return _get_instance().load_crux_secrets()
+
+__all__ = ['CruxVault', 'get', 'set', 'delete', 'list', 'history', 'rollback', 'import_env', 'export_env', 'get_audit_path', 'load_crux_secrets']
 

@@ -34,6 +34,9 @@ crux.list(pretty=True)  # Rich table output
 
 # Delete secrets
 crux.delete("temp/key")
+
+# Load to Python os env
+crux.load_crux_secrets("database/") # can then use as os.environ.get("database/password")
 ```
 
 ### Class-Based API
@@ -110,3 +113,4 @@ except Exception as e:
 | `list(prefix=None, pretty=False)` | List secrets          | `list[dict]` or `None` |
 | `history(path)`                   | Get version history   | `list[dict]`           |
 | `rollback(path, version)`         | Restore old version   | `None`                 |
+| `load_crux_secrets(path)`         | Load to pytho os env  | `None`                 |
